@@ -55,6 +55,12 @@ export enum WorkflowErrorCode {
    * so retrying the same spec would fail identically every time.
    */
   MODEL_NOT_FOUND = "MODEL_NOT_FOUND",
+  /**
+   * An explicit `agentType` did not resolve to any registered agent definition.
+   * Fail closed: a caller that declared a role must not silently receive the
+   * default, unrestricted tool set when that role's definition is missing.
+   */
+  AGENT_TYPE_NOT_FOUND = "AGENT_TYPE_NOT_FOUND",
   /** Agent execution failed. */
   AGENT_EXECUTION_ERROR = "AGENT_EXECUTION_ERROR",
   /** Run state persistence failed. */

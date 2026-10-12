@@ -717,9 +717,12 @@ export class WorkflowAgent {
       options.disallowedToolNames,
     );
 
-    // System tools bypass the allowlist/denylist filter (e.g. shared-store tools).
+    // System tools obey the same effective tool policy, so a write-capable system
+    // tool (e.g. the shared-store `store_put`) cannot bypass an agent-type
+    // allowlist/denylist. `structured_output` is NOT a system tool — it is added
+    // separately below — so a schema still works under a restrictive allowlist.
     if (options.systemTools?.length) {
-      customTools.push(...options.systemTools);
+      customTools.push(...applyToolPolicy(options.systemTools, options.toolNames, options.disallowedToolNames));
     }
 
     if (options.schema) {

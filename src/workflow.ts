@@ -609,7 +609,14 @@ export async function runWorkflow<T = unknown>(
     // Resolve a named agentType to its bound definition (tools/model/prompt).
     const agentDef = resolveAgentType(agentOptions.agentType, agentRegistry);
     if (agentOptions.agentType && !agentDef) {
-      log(`unknown agentType "${agentOptions.agentType}"; using default tools/model`);
+      // Fail closed: an explicitly declared role must not silently degrade to the
+      // default (unrestricted) tool set when its definition is missing. A caller
+      // that passes no agentType keeps the previous default behaviour.
+      throw new WorkflowError(
+        `unknown agentType "${agentOptions.agentType}": no agent definition is registered for it (searched the project .omp/agents directory and the user agents directory)`,
+        WorkflowErrorCode.AGENT_TYPE_NOT_FOUND,
+        { recoverable: false },
+      );
     }
 
     // Model precedence: explicit agentOptions.model > agentType.model > tier > phase model.
