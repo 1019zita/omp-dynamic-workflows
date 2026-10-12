@@ -4,7 +4,7 @@
  *
  * Under omp's extension loader those imports are remapped to the host's bundled
  * copy and re-evaluated for this extension's graph, which is expensive: a static
- * `@oh-my-pi/pi-coding-agent/thinking` import alone measures ~385ms of
+ * `@oh-my-pi/pi-tui/thinking` import alone measures ~385ms of
  * `loadExtensions` time, paid before the TUI paints on every launch. A dynamic
  * `import()` goes through the same shim but only when something actually needs
  * it, and most sessions never run a workflow at all.
@@ -46,8 +46,8 @@ function lazyHostModule<T>(specifier: string, load: () => Promise<T>): LazyHostM
   };
 }
 
-const thinkingModule = lazyHostModule("@oh-my-pi/pi-coding-agent/thinking", () =>
-  import("@oh-my-pi/pi-coding-agent/thinking"),
+const thinkingModule = lazyHostModule("@oh-my-pi/pi-tui/thinking", () =>
+  import("@oh-my-pi/pi-tui/thinking"),
 );
 const frontmatterModule = lazyHostModule("@oh-my-pi/pi-utils/frontmatter", () =>
   import("@oh-my-pi/pi-utils/frontmatter"),
