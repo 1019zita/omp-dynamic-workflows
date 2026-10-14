@@ -237,8 +237,10 @@ export function installResultDelivery(
   });
   // A provider usage/quota limit checkpoints the run as paused (not failed): tell the
   // user it is resumable once their budget refills, rather than letting it look dead.
-  // Manual pause() also emits "paused" but with no reason — guard so only the
-  // usage-limit case delivers a message.
+  // A script-requested pause (pause()) uses the same channel with reason "script":
+  // the run stopped on purpose and is waiting on something the workflow cannot
+  // decide itself, so it must be surfaced too. Manual pause() also emits "paused"
+  // but with no reason — guard so only those two cases deliver a message.
   manager.on(
     "paused",
     ({
@@ -252,8 +254,17 @@ export function installResultDelivery(
       error?: { message?: string };
       resetHint?: string;
     }) => {
-      if (reason !== "usage_limit") return;
+      if (reason !== "usage_limit" && reason !== "script") return;
       if (!manager.getRun(runId)?.background) return;
+      if (reason === "script") {
+        const cause = error?.message ?? "the script paused the run";
+        deliver(
+          `|| Background workflow ${runId} paused: ${cause}. ` +
+            `Completed steps are saved — resume it with resumeFromRunId="${runId}" ` +
+            `(or /workflows resume ${runId}) to continue from the pause point.`,
+        );
+        return;
+      }
       const when = resetHint ? ` (${resetHint})` : "";
       const cause = error?.message ?? "provider usage limit reached";
       deliver(

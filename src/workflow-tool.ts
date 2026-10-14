@@ -13,7 +13,7 @@ import {
   tokenFigures,
   type WorkflowSnapshot,
 } from "./display.js";
-import { WorkflowError, WorkflowErrorCode } from "./errors.js";
+import { readWorkflowPauseDetails, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { parseWorkflowScript, type WorkflowRunResult } from "./workflow.js";
 import { WorkflowManager } from "./workflow-manager.js";
 import { createWorkflowStorage, type WorkflowStorage } from "./workflow-saved.js";
@@ -292,6 +292,24 @@ export function createWorkflowTool(options: WorkflowToolOptions = {}): ToolDefin
           },
         });
       } catch (error) {
+        // A script-requested pause (pause()) is not a failure: the run is
+        // persisted as paused with its journal intact, so report it as the tool
+        // result — the model needs the runId to resume it, not a thrown error.
+        const paused = readWorkflowPauseDetails(error);
+        if (paused) {
+          for (const agent of snapshot.agents) {
+            if (agent.status === "running") {
+              agent.status = "skipped";
+              agent.error = "paused";
+            }
+          }
+          snapshot = recomputeWorkflowSnapshot(snapshot);
+          display.complete(snapshot);
+          return {
+            content: [{ type: "text", text: pausedText(parsed.meta.name, paused.runId, paused.reason) }],
+            details: { ...snapshot, meta: parsed.meta, runId: paused.runId, paused: true, pauseReason: paused.reason },
+          };
+        }
         if (signal?.aborted || (error instanceof WorkflowError && error.code === WorkflowErrorCode.WORKFLOW_ABORTED)) {
           for (const agent of snapshot.agents) {
             if (agent.status === "running") {
@@ -413,6 +431,27 @@ export function backgroundStartedText(name: string, runId: string): string {
 export function reviseHint(runId: string | undefined): string {
   if (!runId) return "";
   return `To revise without re-running everything: re-call workflow with resumeFromRunId="${runId}" and an edited script — unchanged agent() calls replay from cache, only edited/new ones re-run.`;
+}
+
+/**
+ * The tool result returned when a script paused its own run. The run is
+ * persisted as paused (never completed) with its journal intact, so the model
+ * must be told the runId and how to continue it instead of being handed a
+ * result — a paused run produced no result yet.
+ */
+export function pausedText(name: string, runId: string, reason: string | null): string {
+  return [
+    `Workflow "${name}" paused itself (run ${runId}).`,
+    reason ? `Reason: ${reason}` : "",
+    "This is a resumable stop, not a failure: completed agent calls are saved in the",
+    "run's journal. Resume it by re-calling workflow with",
+    `resumeFromRunId="${runId}" and the same script — unchanged agent() calls replay`,
+    "from the journal, the pause is stepped over, and only the calls after it run live.",
+    "Do not start a new run: a new run would repeat the completed work.",
+    `The user can also resume or inspect it with /workflows resume ${runId} / /workflows status ${runId}.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /**

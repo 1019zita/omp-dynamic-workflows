@@ -4,6 +4,6 @@ Use a helper only when it expresses the task's policy. Preserve candidate or wor
 
 - Read [quality helpers](quality-helpers.md) for `verify()` or `judgePanel()`.
 - Read the [retry helper](retry-helper.md) for `retry()`.
-- Read [specialized helpers](specialized-helpers.md) for `completenessCheck()`, `loopUntilDry()`, `gate()`, or `checkpoint()`.
+- Read [specialized helpers](specialized-helpers.md) for `completenessCheck()`, `loopUntilDry()`, `gate()`, `checkpoint()`, or `pause()`.
 
 Runtime agent retries repeat recoverable execution failures; helper attempts are new semantic calls. Bound both layers and ledger exhaustion.

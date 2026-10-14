@@ -160,6 +160,19 @@ Every exact fact below is projected from the installed extension's capability co
 - Constraint: consumes one agent slot and no tokens
 - Constraint: journaled answers replay only within an unchanged resume prefix
 
+<a id="pause"></a>
+## pause
+
+- Classification: `runtime-global`
+- Support: `supported`
+- Signature: `pause(reason?) => Promise<void>`
+- Constraint: stops the run immediately and persists it as paused instead of completing or failing it
+- Constraint: the journal survives the pause, so the run stays resumable
+- Constraint: the pause occupies one journal position and no tokens or agent slots
+- Constraint: on a resumed invocation that same call returns instead of pausing again, so the script continues past the pause point
+- Constraint: an edited reason is a new call identity: the pause happens again instead of resuming past it
+- Constraint: a script that catches the pause throw still settles as paused, never completed
+
 <a id="log"></a>
 ## log
 

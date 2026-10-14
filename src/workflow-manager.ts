@@ -6,7 +6,7 @@ import { EventEmitter } from "node:events";
 import type { ModelRegistry, ToolDefinition } from "./omp-api.js";
 import type { WorkflowAgent } from "./agent.js";
 import { preview, type WorkflowAgentSnapshot, type WorkflowSnapshot } from "./display.js";
-import { isProviderUsageLimit, WorkflowError, WorkflowErrorCode } from "./errors.js";
+import { isProviderUsageLimit, isWorkflowPause, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import {
   createRunPersistence,
   generateRunId,
@@ -821,11 +821,18 @@ export class WorkflowManager extends EventEmitter {
             );
 
       const usageLimitPaused = !managed.controller.signal.aborted && isProviderUsageLimit(workflowError);
+      const scriptPaused = !managed.controller.signal.aborted && isWorkflowPause(workflowError);
       if (managed.controller.signal.aborted) {
         // Intentional abort (pause/stop/Esc) — preserve status set by pause()/stop()
         if (managed.status === "running") {
           managed.status = "aborted";
         }
+      } else if (scriptPaused) {
+        // The script asked for a pause: NOT a failure and NOT a completion. Keep
+        // the run paused so its journal survives on disk (writeRunToDisk keeps the
+        // journal for every non-terminal status) and resume() can replay the
+        // completed prefix, continue past the pause point, and finish the run.
+        managed.status = "paused";
       } else if (usageLimitPaused) {
         // Provider quota/usage limit: NOT a failure. Checkpoint the run as paused so
         // the persisted journal (completed agent results) is replayed by resume()
@@ -843,6 +850,16 @@ export class WorkflowManager extends EventEmitter {
           reason: "usage_limit",
           error: workflowError,
           resetHint: workflowError.resetHint,
+        });
+      } else if (scriptPaused) {
+        // Same channel as a usage-limit checkpoint (both are resumable pauses),
+        // with reason "script" so listeners can tell an author-requested pause
+        // from a provider-imposed one.
+        this.emitLive(managed, "paused", {
+          runId: managed.runId,
+          reason: "script",
+          error: workflowError,
+          pauseMessage: workflowError.message,
         });
       } else if (managed.controller.signal.aborted) {
         // Deliberate stop/pause/delete. The abort rejection is the MECHANISM of
@@ -1083,9 +1100,18 @@ export class WorkflowManager extends EventEmitter {
         agentTimeoutMs: managed.agentTimeoutMs,
         concurrency: managed.concurrency,
         agentRetries: managed.agentRetries,
-        // Why a usage-limit pause happened, so the navigator / a future cold start
-        // can show it and (eventually) re-arm resume after the budget refills.
-        pauseReason: managed.status === "paused" && isProviderUsageLimit(managed.error) ? "usage_limit" : undefined,
+        // Why a pause happened, so the navigator / a future cold start can show
+        // it and (eventually) re-arm resume after the budget refills. "script"
+        // is an author-requested pause (pause()); "usage_limit" is the provider
+        // checkpoint; a manual pause() control has no reason.
+        pauseReason:
+          managed.status === "paused"
+            ? isProviderUsageLimit(managed.error)
+              ? "usage_limit"
+              : isWorkflowPause(managed.error)
+                ? "script"
+                : undefined
+            : undefined,
         resetHint:
           managed.status === "paused" && isProviderUsageLimit(managed.error) ? managed.error.resetHint : undefined,
         phases: managed.snapshot.phases,

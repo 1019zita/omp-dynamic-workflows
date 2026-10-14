@@ -43,6 +43,13 @@ export enum WorkflowErrorCode {
    * so the run is checkpointed (paused) and replayed by resume() rather than failed.
    */
   PROVIDER_USAGE_LIMIT = "PROVIDER_USAGE_LIMIT",
+  /**
+   * The script itself requested a pause via pause(). Like a provider usage limit
+   * this is a checkpoint, not a failure: the run is persisted as "paused" with
+   * its journal intact, so resume() can replay the completed prefix and continue
+   * past the pause point instead of the run settling as completed/failed.
+   */
+  WORKFLOW_PAUSED = "WORKFLOW_PAUSED",
   /** Script validation failed. */
   SCRIPT_VALIDATION_ERROR = "SCRIPT_VALIDATION_ERROR",
   /** A schema agent never produced valid structured_output (after repair + extraction). */
@@ -129,6 +136,27 @@ export function isWorkflowError(error: unknown): error is WorkflowError {
 /** Report whether an unknown failure is a provider usage-limit checkpoint condition. */
 export function isProviderUsageLimit(error: unknown): error is WorkflowError {
   return isWorkflowError(error) && error.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT;
+}
+
+/** Report whether an unknown failure is a script-requested pause (see pause()). */
+export function isWorkflowPause(error: unknown): error is WorkflowError {
+  return isWorkflowError(error) && error.code === WorkflowErrorCode.WORKFLOW_PAUSED;
+}
+
+/** The run-scoped payload a script-requested pause carries on its WorkflowError.details. */
+export interface WorkflowPauseDetails {
+  /** The run the script asked to pause (the manager's persisted run id). */
+  runId: string;
+  /** The author-supplied reason, when pause() was called with one. */
+  reason: string | null;
+}
+
+/** Read the pause payload off a WORKFLOW_PAUSED error, tolerating a foreign shape. */
+export function readWorkflowPauseDetails(error: unknown): WorkflowPauseDetails | null {
+  if (!isWorkflowPause(error)) return null;
+  const details = error.details as Partial<WorkflowPauseDetails> | undefined;
+  if (!details || typeof details.runId !== "string") return null;
+  return { runId: details.runId, reason: typeof details.reason === "string" ? details.reason : null };
 }
 
 /**

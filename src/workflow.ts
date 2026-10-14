@@ -370,6 +370,13 @@ interface RuntimeState {
    * callIndex < firstMiss; once a call misses, it AND everything after run live.
    */
   firstMiss: number;
+  /**
+   * Set by pause() the moment a script asks to pause. The pause is normally
+   * enforced by throwing immediately, but a script's own try/catch can swallow
+   * that throw; this latch is then re-checked once the script returns, so a
+   * script-requested pause can never settle as a completed run.
+   */
+  pauseRequest?: { reason: string | null };
 }
 
 type AnyNode = Node & { [key: string]: any; start: number; end: number };
@@ -529,6 +536,18 @@ export async function runWorkflow<T = unknown>(
       { recoverable: false },
     );
 
+  /**
+   * The stop signal a script-requested pause throws. It carries the run id and
+   * reason so the manager (which turns it into a paused run) and the workflow
+   * tool (which reports the resumable run id) never have to guess them.
+   */
+  const pauseError = (request: { reason: string | null }) =>
+    new WorkflowError(
+      request.reason ? `workflow paused by script: ${request.reason}` : "workflow paused by script",
+      WorkflowErrorCode.WORKFLOW_PAUSED,
+      { recoverable: false, details: { runId, reason: request.reason } },
+    );
+
   // True on an intentional external abort (pause/stop/Esc, via options.signal)
   // OR once this run's fate has been sealed (shared.runFatalController — see
   // its doc comment). Every abort check in this file goes through this so the
@@ -537,6 +556,14 @@ export async function runWorkflow<T = unknown>(
   const isAborted = () => Boolean(options.signal?.aborted || shared.runFatalController.signal.aborted);
 
   const throwIfAborted = () => {
+    // A pause request outranks an abort here: the run is stopping because the
+    // SCRIPT asked it to, and that reason has to survive to the manager (which
+    // classifies the run as paused, not aborted). Checking it here — the single
+    // gate every agent()/checkpoint()/pause() call already passes through — is
+    // also what makes a swallowed pause harmless: a script that catches the
+    // throw cannot go on to run more agents, because the next runtime call
+    // re-throws the same pause.
+    if (state.pauseRequest) throw pauseError(state.pauseRequest);
     if (isAborted()) {
       throw new WorkflowError("workflow aborted", WorkflowErrorCode.WORKFLOW_ABORTED, { recoverable: true });
     }
@@ -1247,6 +1274,41 @@ export async function runWorkflow<T = unknown>(
     return reply;
   };
 
+  // Deterministic, journaled, resumable script-requested pause. Unlike
+  // checkpoint() — which asks the host a question and continues with the answer —
+  // pause() ends the RUN as "paused" instead of completing it, so the journal
+  // survives on disk and resume() can replay the completed prefix later.
+  //
+  // The pause itself occupies a journal position exactly like a checkpoint: on
+  // the first invocation the call is journaled and then thrown, and on resume
+  // that same entry replays so the resumed script walks PAST this pause point
+  // instead of pausing again. A second pause() later in the script is simply a
+  // later callIndex, so a script can hold several sequential control points.
+  // Spends no tokens and reserves no agent slot.
+  const pause = async (reason?: string) => {
+    throwIfAborted();
+    if (reason !== undefined && typeof reason !== "string") {
+      throw new TypeError("pause(reason?) needs a reason string when provided");
+    }
+    const callIndex = state.callSeq++;
+    const callHash = hashPause(reason);
+    // Namespaced by runId like agent()'s deltaKey — see JournalEntry.runId.
+    const journalKey = `${runId}:${callIndex}`;
+    const cached = options.resumeJournal?.get(journalKey);
+    if (cached != null && cached.hash === callHash && callIndex < state.firstMiss) {
+      return; // this pause already happened in an earlier invocation
+    }
+    if (cached == null || cached.hash !== callHash) state.firstMiss = Math.min(state.firstMiss, callIndex);
+
+    // Journal the pause BEFORE stopping: the resumed invocation replays this
+    // entry, and the entry must be on disk by the time the run is persisted as
+    // paused (executeRun persists the journal synchronously on its way out).
+    options.onAgentJournal?.({ index: callIndex, runId, hash: callHash, result: null });
+    const request = { reason: reason ?? null };
+    state.pauseRequest = request;
+    throw pauseError(request);
+  };
+
   const runtimeImplementations = {
     agent,
     parallel,
@@ -1259,6 +1321,7 @@ export async function runWorkflow<T = unknown>(
     retry,
     gate,
     checkpoint,
+    pause,
     log,
     phase,
     args: options.args,
@@ -1286,6 +1349,11 @@ export async function runWorkflow<T = unknown>(
   const wrapped = `${DETERMINISM_PRELUDE}\n(async () => {\n${body}\n})()`;
   try {
     const result = await new vm.Script(wrapped, { filename: `${meta.name || "workflow"}.js` }).runInContext(context);
+
+    // A script that caught pause()'s throw (its own try/catch) must still settle
+    // as a paused run, never as a completed one — the pause request is a latch,
+    // not just the throw.
+    if (state.pauseRequest) throw pauseError(state.pauseRequest);
 
     // Persist logs
     const logFile = logger.persist();
@@ -1538,6 +1606,15 @@ function hashCheckpoint(promptText: string, options: CheckpointOptions): string 
     timeoutMs: options.timeoutMs ?? null,
   });
   return createHash("sha256").update(identity).digest("hex");
+}
+
+/**
+ * Stable identity hash for a pause() call — the reason is its whole identity, so
+ * editing the reason invalidates the journaled pause and the edited script
+ * re-pauses at that point instead of resuming straight past it.
+ */
+function hashPause(reason: string | undefined): string {
+  return createHash("sha256").update(JSON.stringify({ reason: reason ?? null })).digest("hex");
 }
 
 function hashAgentCall(

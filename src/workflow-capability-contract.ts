@@ -122,6 +122,7 @@ export interface WorkflowRuntimeImplementations {
   retry: unknown;
   gate: unknown;
   checkpoint: unknown;
+  pause: unknown;
   log: unknown;
   phase: unknown;
   args: unknown;
@@ -427,6 +428,19 @@ const capabilities: readonly CapabilityDescriptor[] = [
       "journaled answers replay only within an unchanged resume prefix",
     ],
     evidence: ["tests/checkpoint.test.ts"],
+  }),
+  runtimeGlobal("pause", {
+    signature: "pause(reason?) => Promise<void>",
+    discovery: DiscoveryPlacement.WORKFLOW_AUTHORING_SKILL,
+    constraints: [
+      "stops the run immediately and persists it as paused instead of completing or failing it",
+      "the journal survives the pause, so the run stays resumable",
+      "the pause occupies one journal position and no tokens or agent slots",
+      "on a resumed invocation that same call returns instead of pausing again, so the script continues past the pause point",
+      "an edited reason is a new call identity: the pause happens again instead of resuming past it",
+      "a script that catches the pause throw still settles as paused, never completed",
+    ],
+    evidence: ["tests/script-pause.test.ts"],
   }),
   runtimeGlobal("log", { signature: "log(message) => void" }),
   runtimeGlobal("phase", {

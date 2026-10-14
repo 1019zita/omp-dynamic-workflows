@@ -12,6 +12,12 @@ A checkpoint consumes an agent slot but no tokens. A workflow invocation is back
 
 Checkpoint answers are journaled and can replay during an unchanged resume prefix. Do not describe checkpoints as guaranteed arbitrary forms or as remote steering.
 
+## Script-requested pause
+
+`pause(reason?)` stops the run as paused — never as completed and never as failed — and persists it with its journal, so the run stays resumable. The pause occupies a journal position like a checkpoint: resuming that run replays the completed prefix, steps over the pause, and runs only the calls after it live. Use it for a control point the workflow cannot decide by itself, such as a human approval that must precede the artifacts built after it.
+
+A pause is not a completion: the run produces no result until it is resumed, and resuming it is the only way to finish the work already journaled. Do not treat a paused run as a failed one or start a new run in its place.
+
 ## Retry and recoverable failure
 
 Recoverable execution failures retry according to the per-agent option or invocation-time tool input, then return `null`. Nonrecoverable failures throw without becoming `null`. The logical `retry()` combinator is separate: it performs new agent calls and returns its last result when exhausted unless the script records and handles that outcome.

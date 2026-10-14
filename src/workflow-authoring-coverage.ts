@@ -33,7 +33,7 @@ export const WORKFLOW_COMPREHENSION_SCENARIO_IDS = COMPREHENSION_SCENARIOS.map((
 export const WORKFLOW_AUTHORING_FROZEN_FILES = [
   {
     path: "skills/workflow-authoring/SKILL.md",
-    sha256: "997f4fde4e4e25653d354e66b47c772910337138f2669363604f867a2fe52ff2",
+    sha256: "61426cd28371014f4c636be30c573120eb3825f7210df7653ad9a1b5882efa90",
   },
   {
     path: "skills/workflow-authoring/references/runtime.md",
@@ -41,15 +41,15 @@ export const WORKFLOW_AUTHORING_FROZEN_FILES = [
   },
   {
     path: "skills/workflow-authoring/references/helpers.md",
-    sha256: "1c8d253649f00412511f17ffc08c6156797b99de72ae037e14f2ea92ac33a11e",
+    sha256: "445b0255333bce833502ea887c2efe7acaa5de283fdcf7b7c59a761bbb0e5cfe",
   },
   {
     path: "skills/workflow-authoring/references/specialized-helpers.md",
-    sha256: "7597c94bbacea885697fb2d05a96ed9ec39403ca6d3a94547bf8ce5e233b2c76",
+    sha256: "70dd77b86c3b8a2f5464c8f394c94bd50cd3b3d62e808c48d2d8b81efb1312a5",
   },
   {
     path: "skills/workflow-authoring/references/lifecycle.md",
-    sha256: "04a07ddbc03ac7b4452e4bea82418000ff84e429c4a3de602fbc47abaaae8843",
+    sha256: "bb47649a7ef018efe7f60370936cd115ad0dc8bac7448a76abd4ed219f780962",
   },
   {
     path: "skills/workflow-authoring/references/pattern-selection.md",
@@ -164,6 +164,18 @@ const FROZEN_GUIDANCE_BY_CAPABILITY: Readonly<Record<string, readonly ProtectedG
       path: LIFECYCLE_PATH,
       requiredText:
         "A workflow invocation is backgrounded by default, and background workflows are headless: they cannot display checkpoint confirmation.",
+    },
+  ],
+  "workflow.runtime.pause": [
+    {
+      path: SPECIALIZED_HELPERS_PATH,
+      requiredText:
+        "`pause(reason?)` | Stops the run as paused instead of completing or failing it, keeping the journal so the run stays resumable. On resume the same call returns and the script continues past the pause point. Reserves no agent slot and no tokens.",
+    },
+    {
+      path: LIFECYCLE_PATH,
+      requiredText:
+        "A pause is not a completion: the run produces no result until it is resumed, and resuming it is the only way to finish the work already journaled.",
     },
   ],
   "workflow.runtime.log": [
